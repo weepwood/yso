@@ -2,7 +2,7 @@ import { modeFor, resolveMapping } from './config.js';
 import { YuqueCli } from './adapters/yuque-cli.js';
 import { VaultFs } from './filesystem.js';
 import { StateStore } from './state-store.js';
-import type { BookMapping, RemoteDocMeta, SyncMode, SyncState, YsoConfig } from './types.js';
+import type { BookMapping, PendingDelete, RemoteDocMeta, SyncMode, SyncState, YsoConfig } from './types.js';
 
 export interface MappingPlanSummary {
   book: string;
@@ -22,6 +22,16 @@ export interface OrphanStateSummary {
   trackedDocuments: number;
   pendingDeletes: number;
   books: string[];
+}
+
+export interface PendingDeleteDetail {
+  direction: PendingDelete['direction'];
+  key: string;
+  docId?: number;
+  title?: string;
+  slug?: string;
+  path?: string;
+  detectedAt: string;
 }
 
 export async function runPlan(projectRoot: string, config: YsoConfig): Promise<MappingPlanSummary[]> {
@@ -60,6 +70,13 @@ export async function runPlan(projectRoot: string, config: YsoConfig): Promise<M
     }
     if (summary.missingLocalTrackedDocuments > 0 || summary.trackedRemoteDeletes > 0 || summary.pendingDeletes > 0) {
       console.warn(`[plan:risk] ${summary.book} 存在删除/缺失状态，请先检查再执行同步`);
+      for (const detail of buildPendingDeleteDetails(mapping, state, deletedDocs)) {
+        console.warn(
+          `[plan:pending-delete] book=${mapping.book} direction=${detail.direction} ` +
+          `docId=${detail.docId ?? '-'} title=${JSON.stringify(detail.title ?? '')} ` +
+          `slug=${detail.slug ?? '-'} path=${detail.path ?? '-'} detectedAt=${detail.detectedAt}`,
+        );
+      }
     }
   }
 
@@ -105,6 +122,30 @@ export function buildMappingPlanSummary(
   };
 }
 
+export function buildPendingDeleteDetails(
+  mapping: BookMapping,
+  state: SyncState,
+  deletedDocs: RemoteDocMeta[],
+): PendingDeleteDetail[] {
+  const deletedById = new Map(deletedDocs.map((doc) => [doc.id, doc]));
+  return state.pendingDeletes
+    .filter((item) => item.key.startsWith(`${mapping.book}:`))
+    .map((item) => {
+      const tracked = state.docs[item.key];
+      const docId = parseDocId(item.key);
+      const deleted = docId === undefined ? undefined : deletedById.get(docId);
+      return {
+        direction: item.direction,
+        key: item.key,
+        docId,
+        title: tracked?.title ?? deleted?.title,
+        slug: tracked?.slug ?? deleted?.slug,
+        path: item.path ?? tracked?.path,
+        detectedAt: item.detectedAt,
+      };
+    });
+}
+
 export function buildOrphanStateSummary(config: YsoConfig, state: SyncState): OrphanStateSummary {
   const activeBooks = new Set(config.mappings.map((mapping) => mapping.book));
   const orphanDocs = Object.values(state.docs).filter((doc) => !activeBooks.has(doc.book));
@@ -123,6 +164,14 @@ export function buildOrphanStateSummary(config: YsoConfig, state: SyncState): Or
     pendingDeletes: orphanPending.length,
     books: [...books].sort(),
   };
+}
+
+function parseDocId(key: string): number | undefined {
+  const separator = key.lastIndexOf(':');
+  if (separator < 0) return undefined;
+  const value = key.slice(separator + 1);
+  if (!/^\d+$/.test(value)) return undefined;
+  return Number(value);
 }
 
 function dedupeMappings(mappings: BookMapping[]): BookMapping[] {
