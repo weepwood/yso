@@ -180,6 +180,7 @@ export class SyncEngine {
       existing.title = remote.title;
       existing.remoteUpdatedAt = remote.updated_at;
       await this.stateStore.writeBase(key, local.body);
+      await this.vault.updateYuqueMetadata(local.path, remote, existing.book);
       console.log(`[synced] ${local.path}`);
       return;
     }
