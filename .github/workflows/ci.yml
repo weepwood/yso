@@ -5,6 +5,7 @@ on:
     paths:
       - "src/**"
       - "tests/**"
+      - "worker/**"
       - "package.json"
       - "package-lock.json"
       - "tsconfig.json"
@@ -22,8 +23,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-          package-manager-cache: false
-      - run: npm install --no-audit --no-fund --no-package-lock
+          cache: npm
+      - run: npm ci --no-audit --no-fund
       - run: npm run check
       - run: npm run build
 
@@ -40,3 +41,19 @@ jobs:
         with:
           command: doctor
           yuque-token: smoke-test-token
+
+  worker-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - name: Install Worker dependencies
+        working-directory: worker
+        run: npm ci --no-audit --no-fund
+      - name: Build Worker without deploying
+        working-directory: worker
+        run: npx wrangler deploy --dry-run --outdir /tmp/yso-worker-dist

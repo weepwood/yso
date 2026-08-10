@@ -37,7 +37,7 @@ runs:
 
     - name: Install YSO runtime
       shell: bash
-      run: npm install --prefix "$GITHUB_ACTION_PATH" --omit=dev --no-audit --no-fund --no-package-lock
+      run: npm ci --prefix "$GITHUB_ACTION_PATH" --omit=dev --no-audit --no-fund
 
     - name: Run YSO
       shell: bash

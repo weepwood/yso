@@ -22,7 +22,7 @@ v0.2 已包含：
 - **Composite GitHub Action**：`uses: weepwood/yso@...`；
 - **Reusable Workflow**：供独立 Private Vault 仓库复用；
 - Vault 三套工作流模板与接入文档；
-- CI、配置路径安全校验与自动 lockfile 生成。
+- CI、配置路径安全校验与自动 lockfile 维护。
 
 暂未自动转换 Obsidian `[[wikilink]]`、`![[embed]]` 与本地图片。发现这些语法时会提示；图片目前可继续使用已有 Obsidian 端语雀插件，或后续接对象存储 adapter。
 
@@ -116,7 +116,7 @@ uses: weepwood/yso/.github/workflows/reusable-sync.yml@main
 Node.js 20+：
 
 ```bash
-npm install
+npm ci
 export YUQUE_TOKEN='...'
 npm run doctor
 npm run pull
@@ -140,7 +140,7 @@ GITHUB_REPO = "your-private-vault-repo"
 
 ```bash
 cd worker
-npm install
+npm ci
 npx wrangler secret put GITHUB_TOKEN
 npx wrangler secret put WEBHOOK_SECRET
 npm run deploy
@@ -189,14 +189,14 @@ v0.2 仍采用软删除检测。删除事件进入 `.yso/state.json` 的 `pendin
 ## 开发
 
 ```bash
-npm install
+npm ci
 npm run typecheck
 npm test
 npm run build
 npm run check
 ```
 
-GitHub Actions 会使用公共 npm registry 自动生成并提交 `package-lock.json`；锁文件生成后 CI 会逐步切换为 `npm ci`。
+`package-lock.json` 与 `worker/package-lock.json` 已纳入仓库；CI 和 Composite Action 使用 `npm ci`。修改任一 `package.json` 后，`Refresh lockfiles` workflow 会在 GitHub 公共 npm registry 中更新锁文件。
 
 ## Roadmap
 
