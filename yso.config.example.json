@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "vaultDir": "vault",
+  "stateDir": ".yso",
+  "defaultMode": "bidirectional",
+  "writeYuqueMetadata": true,
+  "mappings": [
+    {
+      "localDir": "AI",
+      "book": "your-login/ai",
+      "mode": "bidirectional",
+      "filename": "title"
+    },
+    {
+      "localDir": "Programming",
+      "book": "your-login/programming",
+      "mode": "bidirectional",
+      "filename": "title"
+    }
+  ]
+}

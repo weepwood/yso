@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+.elog.env
+worker/.dev.vars
+worker/node_modules/
+coverage/
+.DS_Store

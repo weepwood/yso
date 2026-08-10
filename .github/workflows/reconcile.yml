@@ -1,0 +1,39 @@
+name: YSO Reconcile
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: yso-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    if: ${{ vars.YSO_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: npm install --no-audit --no-fund --no-package-lock
+      - name: Full reconciliation
+        env:
+          YUQUE_TOKEN: ${{ secrets.YUQUE_TOKEN }}
+          YUQUE_HOST: ${{ secrets.YUQUE_HOST }}
+        run: npm run reconcile
+      - name: Commit reconciliation result
+        run: |
+          git config user.name "yso-sync[bot]"
+          git config user.email "yso-sync@users.noreply.github.com"
+          git add .
+          git diff --cached --quiet || git commit -m "同步：执行全量一致性校验"
+          git push

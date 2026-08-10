@@ -1,0 +1,39 @@
+name: Yuque → Obsidian
+
+on:
+  repository_dispatch:
+    types: [yuque_webhook]
+  workflow_dispatch:
+
+concurrency:
+  group: yso-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: ${{ vars.YSO_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: npm install --no-audit --no-fund --no-package-lock
+      - name: Pull changed Yuque documents
+        env:
+          YUQUE_TOKEN: ${{ secrets.YUQUE_TOKEN }}
+          YUQUE_HOST: ${{ secrets.YUQUE_HOST }}
+        run: npm run pull
+      - name: Commit pulled documents and state
+        run: |
+          git config user.name "yso-sync[bot]"
+          git config user.email "yso-sync@users.noreply.github.com"
+          git add .
+          git diff --cached --quiet || git commit -m "同步：从语雀更新 Obsidian"
+          git push

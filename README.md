@@ -21,11 +21,11 @@ v0.1 MVP 已包含：
 - GitHub Actions：push / webhook / nightly reconcile；
 - 单元测试。
 
-暂未自动处理 Obsidian `[[wikilink]]`、`![[embed]]` 与本地图片上传。发现这些语法时会给出警告；图片目前更适合继续使用已有 `weepwood/yuque-sync` 插件或独立对象存储方案。
+暂未自动处理 Obsidian `[[wikilink]]`、`![[embed]]` 与本地图片上传。发现这些语法时会给出警告；图片目前更适合继续使用已有的 Obsidian 端语雀插件或独立对象存储方案。
 
 ## 为什么这样设计
 
-在实施前先分析了现有项目，包括 `chick26/obsidian-sync-yuque`、`weepwood/yuque-sync`、`x-cold/yuque-hexo`、Elog、Obsidian Git、Gitless Sync 与 Self-hosted LiveSync。详细结论见 [`docs/oss-analysis.md`](docs/oss-analysis.md)。
+在实施前先分析了现有开源项目，包括 `chick26/obsidian-sync-yuque`、`x-cold/yuque-hexo`、Elog、Obsidian Git、Gitless Sync 与 Self-hosted LiveSync；同时对已有的 Obsidian 端语雀同步代码做了复用评估。详细结论见 [`docs/oss-analysis.md`](docs/oss-analysis.md)。
 
 核心取舍：**YSO 做 headless sync engine，不再造一个 Obsidian 插件。**
 
@@ -154,7 +154,7 @@ Local != Remote
 时会生成：
 
 ```text
-.yso/conflicts/<doc>/2026-.../
+.yso/conflicts/<doc>/<fingerprint>/
 ├── base.md
 ├── local.md
 ├── yuque.md
