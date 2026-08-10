@@ -1,0 +1,56 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { buildMappingPlanSummary } from '../src/plan.js';
+import { StateStore } from '../src/state-store.js';
+import type { SyncState } from '../src/types.js';
+
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+});
+
+describe('read-only plan', () => {
+  it('summarizes tracked and untracked documents without guessing content decisions', () => {
+    const state: SyncState = {
+      version: 1,
+      docs: {
+        'weepwood/book:1': { book: 'weepwood/book', docId: 1, slug: 'one', title: 'One', path: 'Pilot/one.md', baseHash: 'a' },
+        'weepwood/book:2': { book: 'weepwood/book', docId: 2, slug: 'two', title: 'Two', path: 'Pilot/two.md', baseHash: 'b' },
+      },
+      pendingDeletes: [{ direction: 'local', key: 'weepwood/book:2', path: 'Pilot/two.md', detectedAt: '2026-08-10T00:00:00Z' }],
+    };
+    const summary = buildMappingPlanSummary(
+      { localDir: 'Pilot', book: 'weepwood/book', mode: 'pull', filename: 'slug' },
+      'pull',
+      ['Pilot/one.md', 'Pilot/local-only.md'],
+      state,
+      [
+        { id: 1, slug: 'one', title: 'One' },
+        { id: 3, slug: 'three', title: 'Three' },
+      ],
+      [{ id: 2, slug: 'two', title: 'Two', deleted_at: '2026-08-10T00:00:00Z' }],
+    );
+    expect(summary).toMatchObject({
+      localDocuments: 2,
+      remoteDocuments: 2,
+      trackedDocuments: 1,
+      newRemoteDocuments: 1,
+      untrackedLocalDocuments: 1,
+      missingLocalTrackedDocuments: 1,
+      trackedRemoteDeletes: 1,
+      pendingDeletes: 1,
+    });
+  });
+
+  it('loadReadonly does not create the state directory', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'yso-plan-'));
+    tempDirs.push(dir);
+    const store = new StateStore(dir, '.yso');
+    const state = await store.loadReadonly();
+    expect(state.docs).toEqual({});
+    await expect(fs.stat(path.join(dir, '.yso'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});

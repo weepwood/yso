@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       command:
-        description: push, pull, reconcile, or doctor
+        description: push, pull, reconcile, doctor, or plan
         required: true
         type: string
       config-path:

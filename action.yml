@@ -4,7 +4,7 @@ author: weepwood
 
 inputs:
   command:
-    description: "Sync command: push, pull, reconcile, or doctor."
+    description: "Sync command: push, pull, reconcile, doctor, or plan."
     required: true
   config-path:
     description: Path to yso.config.json, relative to working-directory.
@@ -50,7 +50,7 @@ runs:
       run: |
         set -euo pipefail
         case "$YSO_COMMAND" in
-          push|pull|reconcile|doctor) ;;
+          push|pull|reconcile|doctor|plan) ;;
           *) echo "Unsupported YSO command: $YSO_COMMAND" >&2; exit 2 ;;
         esac
         if [ -z "$YUQUE_HOST" ]; then
