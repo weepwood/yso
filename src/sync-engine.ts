@@ -46,6 +46,7 @@ export class SyncEngine {
     const state = await this.stateStore.load();
     const scanStartedAt = new Date().toISOString();
     const since = options.full ? undefined : state.lastYuqueScanAt;
+    let remoteActivity = false;
 
     for (const mapping of dedupeMappings(this.config.mappings)) {
       if (modeFor(mapping, this.config) === 'push') continue;
@@ -53,20 +54,30 @@ export class SyncEngine {
       // The official CLI exposes deleted documents as a separate list query.
       // Record tombstones conservatively; v0.1 never propagates deletion automatically.
       const deletedMetas = await this.yuque.listDeletedDocs(mapping.book, since);
+      if (deletedMetas.length > 0) remoteActivity = true;
       for (const meta of deletedMetas) {
         const key = this.stateStore.key(mapping.book, meta.id);
         this.stateStore.addPendingDelete(state, { direction: 'remote', key, path: state.docs[key]?.path });
       }
 
       const metas = await this.yuque.listDocs(mapping.book, since);
+      if (metas.length > 0) remoteActivity = true;
       for (const meta of metas) {
         const remote = await this.yuque.getDocById(meta.id);
         await this.pullOne(state, mapping, remote);
       }
     }
 
-    state.lastYuqueScanAt = scanStartedAt;
-    await this.stateStore.save(state);
+    // Do not move the persisted scan cursor on a completely quiet incremental scan.
+    // Otherwise every scheduled pull would dirty state.json and create a meaningless Git commit.
+    // Keeping the previous cursor is safe: the next scan may re-check the same quiet window, and
+    // any later remote change will still be returned. Full reconcile always advances the cursor.
+    if (options.full || !state.lastYuqueScanAt || remoteActivity) {
+      state.lastYuqueScanAt = scanStartedAt;
+      await this.stateStore.save(state);
+    } else {
+      console.log(`[pull:noop] 自 ${since} 起未发现语雀变更；保持扫描游标不变，不写入 state.json`);
+    }
   }
 
   async reconcile(): Promise<void> {
@@ -219,86 +230,96 @@ export class SyncEngine {
     state.docs[key] = existing;
     await this.stateStore.writeBase(key, remote.body);
 
-    if (remoteHash !== localHash) {
-      const dir = await this.stateStore.writeConflict(key, { base: remote.body, local: local.body, remote: remote.body, meta: existing, titles: { base: remote.title, local: local.title, remote: remote.title } });
-      console.warn(`[conflict:adopt] ${local.path}; 已保存到 ${path.relative(this.projectRoot, dir)}`);
-    } else {
-      console.log(`[adopt] ${local.path} <-> ${location.book}/${location.slug}`);
+    if (localHash === remoteHash) {
+      await this.vault.updateYuqueMetadata(local.path, remote, location.book);
+      console.log(`[adopt:link] ${local.path} <-> ${location.book}/${remote.slug}`);
+      return true;
     }
+
+    const dir = await this.stateStore.writeConflict(key, {
+      base: remote.body,
+      local: local.body,
+      remote: remote.body,
+      meta: existing,
+      titles: { base: remote.title, local: local.title, remote: remote.title },
+    });
+    console.warn(`[conflict:link] ${local.path} -> ${path.relative(this.projectRoot, dir)}`);
     return true;
   }
 
   private async findLocalByYuqueLink(book: string, slug: string): Promise<LocalDoc | null> {
     const locals = await this.vault.scan();
-    const matches = locals.filter((local) => {
+    return locals.find((local) => {
       const location = extractYuqueLocation(local.yuqueLink);
       return location?.book === book && location.slug === slug;
+    }) ?? null;
+  }
+
+  private async findUntrackedLocalByBody(state: SyncState, mapping: BookMapping, body: string): Promise<LocalDoc | null> {
+    const locals = await this.vault.scan();
+    const trackedPaths = new Set(Object.values(state.docs).map((doc) => doc.path));
+    const bodyHash = hashMarkdown(body);
+    const candidates = locals.filter((local) => {
+      if (trackedPaths.has(local.path)) return false;
+      const resolved = resolveMapping(local.path, this.config);
+      return resolved?.book === mapping.book && hashMarkdown(local.body) === bodyHash;
     });
-    return matches.length === 1 ? matches[0]! : null;
+    if (candidates.length === 1) return candidates[0];
+    if (candidates.length > 1) console.warn(`[bootstrap] 存在 ${candidates.length} 个正文相同的本地候选，放弃自动认领`);
+    return null;
   }
 
   private async allocateRemotePath(state: SyncState, mapping: BookMapping, remote: RemoteDoc): Promise<string> {
-    const stem = sanitizeFilename((mapping.filename ?? 'title') === 'slug' ? remote.slug : remote.title);
-    const dir = mapping.localDir.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/$/, '');
-    let candidate = dir === '.' || dir === '' ? `${stem}.md` : `${dir}/${stem}.md`;
-    let suffix = 1;
-    const reserved = new Set(Object.values(state.docs).map((doc) => doc.path));
-    while (reserved.has(candidate) || await this.vault.read(candidate)) {
-      const filename = `${stem}-${remote.id}${suffix === 1 ? '' : `-${suffix}`}.md`;
-      candidate = dir === '.' || dir === '' ? filename : `${dir}/${filename}`;
-      suffix += 1;
+    const base = mapping.filename === 'title' ? sanitizeFilename(remote.title) : sanitizeFilename(remote.slug);
+    const ext = '.md';
+    let candidate = path.posix.join(mapping.localDir, `${base}${ext}`);
+    const used = new Set(Object.values(state.docs).map((doc) => doc.path));
+    let index = 2;
+    while (used.has(candidate) || await this.vault.read(candidate)) {
+      candidate = path.posix.join(mapping.localDir, `${base}-${index}${ext}`);
+      index += 1;
     }
     return candidate;
   }
 
-  private detectLocalDeletes(state: SyncState, existingPaths: Set<string>): void {
-    for (const [key, doc] of Object.entries(state.docs)) {
-      if (!existingPaths.has(doc.path)) this.stateStore.addPendingDelete(state, { direction: 'local', key, path: doc.path });
-    }
-  }
-
-  private async findUntrackedLocalByBody(state: SyncState, mapping: BookMapping, remoteBody: string): Promise<LocalDoc | null> {
-    const trackedPaths = new Set(Object.values(state.docs).map((doc) => doc.path));
-    const remoteBodyHash = hashMarkdown(remoteBody);
-    const locals = await this.vault.scan();
-    const matches = locals.filter((local) => {
-      const localMapping = resolveMapping(local.path, this.config);
-      return localMapping?.book === mapping.book && !trackedPaths.has(local.path) && hashMarkdown(local.body) === remoteBodyHash;
-    });
-    return matches.length === 1 ? matches[0]! : null;
-  }
-
   private async detectSafeRenames(state: SyncState, locals: LocalDoc[]): Promise<void> {
-    const paths = new Set(locals.map((doc) => doc.path));
+    const paths = new Map(locals.map((local) => [local.path, local]));
     const untracked = locals.filter((local) => !findStateByPath(state, local.path));
-    for (const local of untracked) {
-      const mapping = resolveMapping(local.path, this.config);
-      if (!mapping) continue;
-      const missing = Object.entries(state.docs).filter(([, doc]) => doc.book === mapping.book && !paths.has(doc.path));
-      const candidates: DocState[] = [];
-      for (const [key, doc] of missing) {
-        const baseBody = await this.stateStore.readBase(key);
-        if (baseBody !== null && hashMarkdown(baseBody) === hashMarkdown(local.body)) candidates.push(doc);
-      }
-      if (candidates.length === 1) {
-        candidates[0]!.path = local.path;
-        console.log(`[rename] ${candidates[0]!.docId}: -> ${local.path}`);
-      }
+    const claimed = new Set<string>();
+
+    for (const [key, docState] of Object.entries(state.docs)) {
+      if (paths.has(docState.path)) continue;
+      const base = await this.stateStore.readBase(key);
+      if (base == null) continue;
+      const candidates = untracked.filter((local) => !claimed.has(local.path) && hashMarkdown(local.body) === hashMarkdown(base));
+      if (candidates.length !== 1) continue;
+      const next = candidates[0];
+      docState.path = next.path;
+      claimed.add(next.path);
+      this.stateStore.clearPendingDelete(state, 'local', key);
+      console.log(`[rename] ${key} -> ${next.path}`);
+    }
+  }
+
+  private detectLocalDeletes(state: SyncState, localPaths: Set<string>): void {
+    for (const [key, doc] of Object.entries(state.docs)) {
+      if (localPaths.has(doc.path)) this.stateStore.clearPendingDelete(state, 'local', key);
+      else this.stateStore.addPendingDelete(state, { direction: 'local', key, path: doc.path });
     }
   }
 }
 
-function findStateByPath(state: SyncState, relativePath: string): DocState | null {
-  return Object.values(state.docs).find((doc) => doc.path === relativePath) ?? null;
+function findStateByPath(state: SyncState, relativePath: string): DocState | undefined {
+  return Object.values(state.docs).find((doc) => doc.path === relativePath);
 }
 
-function toDocState(book: string, relativePath: string, remote: RemoteDoc, baseHash: string): DocState {
+function toDocState(book: string, localPath: string, remote: RemoteDoc, baseHash: string): DocState {
   return {
     book,
     docId: remote.id,
     slug: remote.slug,
     title: remote.title,
-    path: relativePath,
+    path: localPath,
     baseHash,
     remoteUpdatedAt: remote.updated_at,
   };
@@ -309,6 +330,6 @@ function dedupeMappings(mappings: BookMapping[]): BookMapping[] {
 }
 
 function warnObsidianSyntax(local: LocalDoc): void {
-  const warnings = findUnsupportedObsidianSyntax(normalizeMarkdown(local.body));
-  if (warnings.length > 0) console.warn(`[markdown] ${local.path} 包含暂未转换的 Obsidian 语法: ${warnings.join(', ')}`);
+  const unsupported = findUnsupportedObsidianSyntax(local.body);
+  for (const item of unsupported) console.warn(`[warn:${item.kind}] ${local.path}: ${item.sample}`);
 }
