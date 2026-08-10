@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "vaultDir": "tests/fixtures/reusable-smoke/vault",
+  "stateDir": ".yso",
+  "defaultMode": "pull",
+  "writeYuqueMetadata": true,
+  "mappings": [
+    {
+      "localDir": ".",
+      "book": "smoke-test/book",
+      "mode": "pull",
+      "filename": "slug"
+    }
+  ]
+}

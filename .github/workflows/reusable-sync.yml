@@ -38,8 +38,10 @@ on:
       YUQUE_HOST:
         required: false
 
-permissions:
-  contents: write
+# Do not request repository permissions here. GitHub does not allow a called
+# workflow to elevate the caller's token. The caller must explicitly grant
+# contents: read for doctor/plan or contents: write for sync commands that
+# commit results.
 
 concurrency:
   group: yso-${{ github.repository }}
