@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildMappingPlanSummary, buildOrphanStateSummary } from '../src/plan.js';
+import { buildMappingPlanSummary, buildOrphanStateSummary, buildPendingDeleteDetails } from '../src/plan.js';
 import { StateStore } from '../src/state-store.js';
 import type { SyncState, YsoConfig } from '../src/types.js';
 
@@ -43,6 +43,44 @@ describe('read-only plan', () => {
       trackedRemoteDeletes: 1,
       pendingDeletes: 1,
     });
+  });
+
+  it('expands pending delete metadata from state and deleted remote docs', () => {
+    const state: SyncState = {
+      version: 1,
+      docs: {
+        'weepwood/book:2': { book: 'weepwood/book', docId: 2, slug: 'tracked-two', title: 'Tracked Two', path: 'Pilot/two.md', baseHash: 'b' },
+      },
+      pendingDeletes: [
+        { direction: 'local', key: 'weepwood/book:2', path: 'Pilot/two.md', detectedAt: '2026-08-10T00:00:00Z' },
+        { direction: 'remote', key: 'weepwood/book:3', detectedAt: '2026-08-10T00:01:00Z' },
+      ],
+    };
+
+    expect(buildPendingDeleteDetails(
+      { localDir: 'Pilot', book: 'weepwood/book', mode: 'pull', filename: 'slug' },
+      state,
+      [{ id: 3, slug: 'deleted-three', title: 'Deleted Three', deleted_at: '2026-08-10T00:01:00Z' }],
+    )).toEqual([
+      {
+        direction: 'local',
+        key: 'weepwood/book:2',
+        docId: 2,
+        title: 'Tracked Two',
+        slug: 'tracked-two',
+        path: 'Pilot/two.md',
+        detectedAt: '2026-08-10T00:00:00Z',
+      },
+      {
+        direction: 'remote',
+        key: 'weepwood/book:3',
+        docId: 3,
+        title: 'Deleted Three',
+        slug: 'deleted-three',
+        path: undefined,
+        detectedAt: '2026-08-10T00:01:00Z',
+      },
+    ]);
   });
 
   it('reports state entries that belong to removed mappings', () => {
