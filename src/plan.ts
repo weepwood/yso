@@ -18,6 +18,12 @@ export interface MappingPlanSummary {
   pendingDeletes: number;
 }
 
+export interface OrphanStateSummary {
+  trackedDocuments: number;
+  pendingDeletes: number;
+  books: string[];
+}
+
 export async function runPlan(projectRoot: string, config: YsoConfig): Promise<MappingPlanSummary[]> {
   const vault = new VaultFs(projectRoot, config);
   const stateStore = new StateStore(projectRoot, config.stateDir ?? '.yso');
@@ -57,6 +63,15 @@ export async function runPlan(projectRoot: string, config: YsoConfig): Promise<M
     }
   }
 
+  const orphaned = buildOrphanStateSummary(config, state);
+  if (orphaned.trackedDocuments > 0 || orphaned.pendingDeletes > 0) {
+    console.warn(
+      `[plan:orphan] 配置外残留状态 tracked=${orphaned.trackedDocuments} ` +
+      `pending-deletes=${orphaned.pendingDeletes} books=${orphaned.books.join(',') || '-'}；` +
+      '这些条目不会参与当前映射，请人工确认后清理',
+    );
+  }
+
   return summaries;
 }
 
@@ -87,6 +102,26 @@ export function buildMappingPlanSummary(
     missingLocalTrackedDocuments: tracked.filter(([, doc]) => !localPathSet.has(doc.path)).length,
     trackedRemoteDeletes: tracked.filter(([, doc]) => deletedIds.has(doc.docId)).length,
     pendingDeletes: state.pendingDeletes.filter((item) => item.key.startsWith(`${mapping.book}:`)).length,
+  };
+}
+
+export function buildOrphanStateSummary(config: YsoConfig, state: SyncState): OrphanStateSummary {
+  const activeBooks = new Set(config.mappings.map((mapping) => mapping.book));
+  const orphanDocs = Object.values(state.docs).filter((doc) => !activeBooks.has(doc.book));
+  const orphanPending = state.pendingDeletes.filter(
+    (item) => ![...activeBooks].some((book) => item.key.startsWith(`${book}:`)),
+  );
+  const books = new Set<string>(orphanDocs.map((doc) => doc.book));
+
+  for (const item of orphanPending) {
+    const separator = item.key.lastIndexOf(':');
+    if (separator > 0) books.add(item.key.slice(0, separator));
+  }
+
+  return {
+    trackedDocuments: orphanDocs.length,
+    pendingDeletes: orphanPending.length,
+    books: [...books].sort(),
   };
 }
 
