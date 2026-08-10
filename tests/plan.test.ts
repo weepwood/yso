@@ -2,9 +2,9 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildMappingPlanSummary } from '../src/plan.js';
+import { buildMappingPlanSummary, buildOrphanStateSummary } from '../src/plan.js';
 import { StateStore } from '../src/state-store.js';
-import type { SyncState } from '../src/types.js';
+import type { SyncState, YsoConfig } from '../src/types.js';
 
 const tempDirs: string[] = [];
 
@@ -42,6 +42,34 @@ describe('read-only plan', () => {
       missingLocalTrackedDocuments: 1,
       trackedRemoteDeletes: 1,
       pendingDeletes: 1,
+    });
+  });
+
+  it('reports state entries that belong to removed mappings', () => {
+    const config: YsoConfig = {
+      version: 1,
+      vaultDir: '.',
+      stateDir: '.yso',
+      defaultMode: 'pull',
+      writeYuqueMetadata: true,
+      mappings: [{ localDir: 'Current', book: 'weepwood/current', mode: 'pull', filename: 'slug' }],
+    };
+    const state: SyncState = {
+      version: 1,
+      docs: {
+        'weepwood/current:1': { book: 'weepwood/current', docId: 1, slug: 'one', title: 'One', path: 'Current/one.md', baseHash: 'a' },
+        'weepwood/removed:2': { book: 'weepwood/removed', docId: 2, slug: 'two', title: 'Two', path: 'Old/two.md', baseHash: 'b' },
+      },
+      pendingDeletes: [
+        { direction: 'remote', key: 'weepwood/current:3', detectedAt: '2026-08-10T00:00:00Z' },
+        { direction: 'remote', key: 'weepwood/removed:4', detectedAt: '2026-08-10T00:00:00Z' },
+      ],
+    };
+
+    expect(buildOrphanStateSummary(config, state)).toEqual({
+      trackedDocuments: 1,
+      pendingDeletes: 1,
+      books: ['weepwood/removed'],
     });
   });
 
