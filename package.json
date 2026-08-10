@@ -13,7 +13,7 @@
     "pull": "tsx src/cli.ts pull",
     "reconcile": "tsx src/cli.ts reconcile",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run tests",
     "check": "npm run typecheck && npm test",
     "doctor": "tsx src/cli.ts doctor",
     "build": "tsc --project tsconfig.build.json"
