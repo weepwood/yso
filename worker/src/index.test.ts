@@ -22,6 +22,8 @@ test('GET health check does not require configuration', async () => {
   const response = await worker.fetch(new Request('https://worker.example/'), env());
   assert.equal(response.status, 200);
   assert.equal(await response.text(), 'yso webhook gateway: ok');
+  assert.match(response.headers.get('x-yso-request-id') ?? '', /^[0-9a-f-]{36}$/i);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
 });
 
 test('rejects unsupported HTTP methods', async () => {
@@ -50,12 +52,41 @@ test('rejects invalid webhook secret', async () => {
   assert.equal(response.status, 401);
 });
 
+test('prefers header secret over query secret', async () => {
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return new Response(null, { status: 204 });
+  };
+  const response = await worker.fetch(
+    new Request('https://worker.example/?token=wrong-query-secret', {
+      method: 'POST',
+      headers: { 'x-yso-webhook-secret': 'webhook-test-secret' },
+      body: '{}',
+    }),
+    env(),
+  );
+  assert.equal(response.status, 200);
+  assert.equal(calls, 1);
+});
+
 test('rejects invalid JSON', async () => {
   const response = await worker.fetch(
     new Request('https://worker.example/?token=webhook-test-secret', { method: 'POST', body: '{' }),
     env(),
   );
   assert.equal(response.status, 400);
+});
+
+test('rejects webhook bodies larger than 256 KiB', async () => {
+  const response = await worker.fetch(
+    new Request('https://worker.example/?token=webhook-test-secret', {
+      method: 'POST',
+      body: 'x'.repeat(256 * 1024 + 1),
+    }),
+    env(),
+  );
+  assert.equal(response.status, 413);
 });
 
 test('dispatches Worker-compatible yuque_webhook payload to GitHub', async () => {
@@ -86,6 +117,8 @@ test('dispatches Worker-compatible yuque_webhook payload to GitHub', async () =>
   assert.equal(body.client_payload.doc_id, 280859522);
   assert.equal(body.client_payload.action, 'doc.updated');
   assert.match(body.client_payload.received_at, /^\d{4}-\d{2}-\d{2}T/);
+  assert.match(body.client_payload.request_id, /^[0-9a-f-]{36}$/i);
+  assert.equal(response.headers.get('x-yso-request-id'), body.client_payload.request_id);
 });
 
 test('accepts secret in query string for Yuque webhook configuration', async () => {
