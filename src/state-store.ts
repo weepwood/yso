@@ -61,6 +61,20 @@ export class StateStore {
     }
   }
 
+  async listBaseFilenamesReadonly(): Promise<string[]> {
+    try {
+      const entries = await fs.readdir(this.baseDir, { withFileTypes: true });
+      return entries.filter((entry) => entry.isFile()).map((entry) => entry.name).sort();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw error;
+    }
+  }
+
+  baseFilename(key: string): string {
+    return `${safeKey(key)}.md`;
+  }
+
   async writeBase(key: string, body: string): Promise<void> {
     await this.ensure();
     await fs.writeFile(this.basePath(key), body, 'utf8');
@@ -92,7 +106,7 @@ export class StateStore {
   }
 
   private basePath(key: string): string {
-    return path.join(this.baseDir, `${safeKey(key)}.md`);
+    return path.join(this.baseDir, this.baseFilename(key));
   }
 }
 
