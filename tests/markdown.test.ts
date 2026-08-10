@@ -1,3 +1,4 @@
+import matter from 'gray-matter';
 import { describe, expect, it } from 'vitest';
 import { extractYuqueLocation, renderLocalMarkdown, sanitizeFilename } from '../src/core/markdown.js';
 
@@ -10,11 +11,13 @@ describe('markdown helpers', () => {
     const output = renderLocalMarkdown('---\ntags:\n  - x\n---\nlocal\n', {
       title: 'Remote', body: 'remote\n', book: 'a/b', slug: 'doc', updatedAt: '2026-08-10T00:00:00Z',
     }, true);
-    expect(output).toContain('tags:');
-    expect(output).toContain('title: Remote');
-    expect(output).toContain('yuque_link: https://www.yuque.com/a/b/doc');
-    expect(output).toContain('remote');
-    expect(output).not.toContain('\nlocal\n');
+    const parsed = matter(output);
+    expect(parsed.data.tags).toEqual(['x']);
+    expect(parsed.data.title).toBe('Remote');
+    expect(parsed.data.yuque_link).toBe('https://www.yuque.com/a/b/doc');
+    expect(parsed.data.yuque_title).toBe('Remote');
+    expect(parsed.data.yuque_updated_at).toBe('2026-08-10T00:00:00Z');
+    expect(parsed.content).toBe('remote\n');
   });
 
   it('sanitizes filenames', () => {
