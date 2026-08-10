@@ -2,6 +2,19 @@
 
 YSO 使用语义化版本思路记录公开版本。当前仍处于早期阶段，涉及 state 格式或冲突语义的破坏性调整会在发布说明中明确标记。
 
+## Unreleased
+
+### Plan / 状态审计
+
+- 增加 `.yso/base/` 完整性审计：检查缺失基线、`baseHash` 不一致和孤儿 base 文件；
+- Base 审计保持零写入，只报告风险，不自动修复或删除同步基线；
+- 补充 Plan 运维文档，明确 orphan state、pending delete 与 base integrity 三类风险的处理边界。
+
+### 工程化
+
+- 增加 `npm run version:check`；
+- CI 会校验 `package.json.version` 必须存在对应 `CHANGELOG.md` 版本节，降低发布版本与文档漂移风险。
+
 ## v0.2.0 — 2026-08-10
 
 首个经过真实语雀环境端到端验证的版本。
