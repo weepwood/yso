@@ -12,6 +12,7 @@ v0.2 已包含：
 - `pull`：语雀增量变化 → 本地 Markdown；
 - `reconcile`：全量拉取后再扫描本地；
 - `doctor`：检查配置、Vault、Token 与语雀 CLI；
+- `plan`：**零写入**预演同步规模与删除/缺失风险；
 - 官方 `yuque-open-cli@1.1.0`；
 - `.yso/state.json` 文档 ID/路径映射；
 - `.yso/base/` 共同基线；
@@ -21,8 +22,8 @@ v0.2 已包含：
 - Cloudflare Worker Webhook 网关；
 - **Composite GitHub Action**：`uses: weepwood/yso@...`；
 - **Reusable Workflow**：供独立 Private Vault 仓库复用；
-- Vault 三套工作流模板与接入文档；
-- CI、配置路径安全校验与自动 lockfile 维护。
+- Vault 接入工作流模板与接入文档；
+- CI、配置路径安全校验与 npm lockfile 维护。
 
 暂未自动转换 Obsidian `[[wikilink]]`、`![[embed]]` 与本地图片。发现这些语法时会提示；图片目前可继续使用已有 Obsidian 端语雀插件，或后续接对象存储 adapter。
 
@@ -76,21 +77,24 @@ Vault 仓库 Settings → Secrets and variables → Actions：
 - `YUQUE_TOKEN`：必需；
 - `YUQUE_HOST`：企业空间或自定义 Host 才需要。
 
-### 3. 添加工作流
+### 3. 先预演，再同步
 
-完整步骤见 [`docs/vault-setup.md`](docs/vault-setup.md)。可直接从 [`examples/workflows/`](examples/workflows/) 复制：
+完整步骤见 [`docs/vault-setup.md`](docs/vault-setup.md)。建议首次接入按顺序运行：
 
+```text
+Doctor → Plan → Pilot Pull → Push → Webhook → Reconcile
+```
+
+`plan` 是只读命令：它不会创建 `.yso/`，也不会修改 Vault、state 或语雀。详细说明见 [`docs/plan.md`](docs/plan.md)。
+
+工作流模板位于 [`examples/workflows/`](examples/workflows/)：
+
+- `yso-plan.yml`
 - `yso-push.yml`
 - `yso-pull.yml`
 - `yso-reconcile.yml`
 
-它们调用：
-
-```yaml
-uses: weepwood/yso/.github/workflows/reusable-sync.yml@main
-```
-
-稳定使用时建议将 `@main` 与 `engine-ref` 一起锁到同一个 release tag 或 commit SHA。
+稳定使用时建议把 Reusable Workflow 与 `engine-ref` 一起锁到同一个 release tag 或 commit SHA。
 
 ## Composite Action
 
@@ -103,13 +107,13 @@ uses: weepwood/yso/.github/workflows/reusable-sync.yml@main
 
 - uses: weepwood/yso@main
   with:
-    command: pull
+    command: plan
     config-path: yso.config.json
     yuque-token: ${{ secrets.YUQUE_TOKEN }}
     yuque-host: ${{ secrets.YUQUE_HOST }}
 ```
 
-支持命令：`push`、`pull`、`reconcile`、`doctor`。
+支持命令：`push`、`pull`、`reconcile`、`doctor`、`plan`。
 
 ## 本地运行
 
@@ -119,6 +123,7 @@ Node.js 20+：
 npm ci
 export YUQUE_TOKEN='...'
 npm run doctor
+npm run sync -- plan
 npm run pull
 npm run push
 npm run reconcile
