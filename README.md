@@ -2,65 +2,57 @@
 
 YSO 是一个面向 GitHub Actions 的 **语雀 ↔ Git/Obsidian 双向同步引擎**。
 
-它不重新实现 Obsidian 的 Git 同步，而是让成熟的 Obsidian Git 负责 `Vault ↔ GitHub`，YSO 负责 GitHub 与语雀之间最容易出错的部分：文档映射、增量拉取、三方冲突检测、Webhook 触发和最终一致性对账。
+它不重新实现 Obsidian 的 Git 同步：Obsidian Git 负责 `Vault ↔ GitHub`，YSO 专注处理 `GitHub ↔ 语雀` 的文档映射、增量拉取、三方冲突检测、Webhook 触发与最终一致性对账。
 
 ## 当前状态
 
-v0.1 MVP 已包含：
+v0.2 已包含：
 
 - `push`：本地 Markdown → 语雀；
-- `pull`：语雀增量变更 → 本地 Markdown；
-- `reconcile`：全量拉取 + 本地扫描；
-- 语雀官方 `yuque-open-cli@1.1.0`；
+- `pull`：语雀增量变化 → 本地 Markdown；
+- `reconcile`：全量拉取后再扫描本地；
+- `doctor`：检查配置、Vault、Token 与语雀 CLI；
+- 官方 `yuque-open-cli@1.1.0`；
 - `.yso/state.json` 文档 ID/路径映射；
 - `.yso/base/` 共同基线；
 - `.yso/conflicts/` 三方冲突留档；
 - 删除软检测，不自动删除任意一端；
-- 兼容现有 `yuque_link` Frontmatter；
+- 兼容 `yuque_link` Frontmatter；
 - Cloudflare Worker Webhook 网关；
-- GitHub Actions：push / webhook / nightly reconcile；
-- 单元测试。
+- **Composite GitHub Action**：`uses: weepwood/yso@...`；
+- **Reusable Workflow**：供独立 Private Vault 仓库复用；
+- Vault 三套工作流模板与接入文档；
+- CI、配置路径安全校验与自动 lockfile 生成。
 
-暂未自动处理 Obsidian `[[wikilink]]`、`![[embed]]` 与本地图片上传。发现这些语法时会给出警告；图片目前更适合继续使用已有的 Obsidian 端语雀插件或独立对象存储方案。
+暂未自动转换 Obsidian `[[wikilink]]`、`![[embed]]` 与本地图片。发现这些语法时会提示；图片目前可继续使用已有 Obsidian 端语雀插件，或后续接对象存储 adapter。
 
-## 为什么这样设计
-
-在实施前先分析了现有开源项目，包括 `chick26/obsidian-sync-yuque`、`x-cold/yuque-hexo`、Elog、Obsidian Git、Gitless Sync 与 Self-hosted LiveSync；同时对已有的 Obsidian 端语雀同步代码做了复用评估。详细结论见 [`docs/oss-analysis.md`](docs/oss-analysis.md)。
-
-核心取舍：**YSO 做 headless sync engine，不再造一个 Obsidian 插件。**
-
-## 目录
+## 架构
 
 ```text
-.
-├── src/
-│   ├── adapters/yuque-cli.ts
-│   ├── core/
-│   ├── cli.ts
-│   ├── filesystem.ts
-│   ├── state-store.ts
-│   └── sync-engine.ts
-├── worker/                  # Yuque Webhook → GitHub repository_dispatch
-├── .github/workflows/
-├── .yso/
-│   ├── base/
-│   └── conflicts/
-├── docs/
-└── yso.config.example.json
+Obsidian
+   │ Obsidian Git
+   ▼
+Private Vault Repo
+   │ push                         ▲ sync commit
+   ▼                              │
+GitHub Actions ─── YSO Engine ────┘
+   │
+   ├──────── Yuque Open CLI ───────► Yuque
+   │                                  │
+   │                                  │ Webhook
+   ◄─ repository_dispatch ─ Worker ◄──┘
 ```
 
-## 1. 准备配置
+`weepwood/yso` 建议只保存同步引擎源码。**真实 Vault 应使用独立 Private Repository。**
 
-```bash
-cp yso.config.example.json yso.config.json
-```
+## 快速开始
 
-示例：
+### 1. 在 Vault 仓库创建配置
 
 ```json
 {
   "version": 1,
-  "vaultDir": "vault",
+  "vaultDir": ".",
   "stateDir": ".yso",
   "defaultMode": "bidirectional",
   "writeYuqueMetadata": true,
@@ -75,41 +67,76 @@ cp yso.config.example.json yso.config.json
 }
 ```
 
-建议实际笔记使用**单独的私有 GitHub 仓库**。当前 `weepwood/yso` 是同步引擎源码仓库，不建议把私人 Vault 直接提交到公开的 YSO 仓库。
+`vaultDir`、`stateDir`、`localDir` 必须是仓库/Vault 内的相对路径；YSO 会拒绝 `../`、绝对路径和 Windows 盘符路径。
 
-如果只是本地验证，也可以临时把 Vault 放在项目 `vault/`；正式使用时推荐把本项目作为同步引擎引入你的私有 Vault 仓库。
+### 2. 添加 GitHub Secrets
 
-## 2. 本地验证
+Vault 仓库 Settings → Secrets and variables → Actions：
+
+- `YUQUE_TOKEN`：必需；
+- `YUQUE_HOST`：企业空间或自定义 Host 才需要。
+
+### 3. 添加工作流
+
+完整步骤见 [`docs/vault-setup.md`](docs/vault-setup.md)。可直接从 [`examples/workflows/`](examples/workflows/) 复制：
+
+- `yso-push.yml`
+- `yso-pull.yml`
+- `yso-reconcile.yml`
+
+它们调用：
+
+```yaml
+uses: weepwood/yso/.github/workflows/reusable-sync.yml@main
+```
+
+稳定使用时建议将 `@main` 与 `engine-ref` 一起锁到同一个 release tag 或 commit SHA。
+
+## Composite Action
+
+如果希望自己编排 workflow：
+
+```yaml
+- uses: actions/checkout@v7
+  with:
+    fetch-depth: 0
+
+- uses: weepwood/yso@main
+  with:
+    command: pull
+    config-path: yso.config.json
+    yuque-token: ${{ secrets.YUQUE_TOKEN }}
+    yuque-host: ${{ secrets.YUQUE_HOST }}
+```
+
+支持命令：`push`、`pull`、`reconcile`、`doctor`。
+
+## 本地运行
 
 Node.js 20+：
 
 ```bash
 npm install
 export YUQUE_TOKEN='...'
+npm run doctor
 npm run pull
 npm run push
 npm run reconcile
 ```
 
-企业语雀可按官方 CLI 的方式额外设置 `YUQUE_HOST`。
+企业语雀可额外设置 `YUQUE_HOST`。
 
-## 3. GitHub Actions
+## Webhook Worker
 
-仓库 Settings 中添加：
+**先修改 `worker/wrangler.toml` 中的目标仓库。默认 `CHANGE_ME` 会拒绝转发，防止误把 Webhook 发到 YSO 源码仓库。**
 
-### Actions Secret
+```toml
+[vars]
+GITHUB_OWNER = "your-github-name"
+GITHUB_REPO = "your-private-vault-repo"
+```
 
-- `YUQUE_TOKEN`
-- `YUQUE_HOST`（仅需要自定义 Host 时）
-
-### Actions Variable
-
-- `YSO_ENABLED=true`
-- `YSO_VAULT_DIR=vault`（可选，用于 push workflow 的 commit 范围）
-
-在 `YSO_ENABLED` 设置前，同步 workflow 不会实际运行，避免初始化项目时因为 Token/配置尚未准备而失败。
-
-## 4. Cloudflare Worker
+再执行：
 
 ```bash
 cd worker
@@ -119,31 +146,19 @@ npx wrangler secret put WEBHOOK_SECRET
 npm run deploy
 ```
 
-`GITHUB_TOKEN` 建议使用只对目标仓库开放的 Fine-grained PAT，并只授予 **Contents: write**（GitHub 当前对 `repository_dispatch` 的最低写权限要求）。
-
-部署完成后，在语雀知识库“消息推送 / Webhook”中填写：
+语雀 Webhook 指向：
 
 ```text
 https://<worker-domain>/?token=<WEBHOOK_SECRET>
 ```
 
-Worker 不依赖 Webhook payload 的具体结构。它只将事件转换为 `repository_dispatch`，真正的变更列表由语雀官方 API/CLI 再读取。
+Worker 把 Webhook 当作“有变化”的唤醒信号，核心同步不依赖具体 payload；Action 会重新通过语雀官方 API/CLI 查询实际增量变化。
 
-> 当前无法从自动化环境直接读取你提供的语雀官方 Webhook 页面（返回 403），因此 v0.1 不假设一个未经验证的官方签名字段。Worker 先使用高熵 URL Secret；后续拿到实际 Webhook 请求样本后，应再补官方签名验证。
+> 目前仍未取得一份可验证的真实语雀 Webhook 签名样本，因此没有猜测官方签名字段。当前使用高熵 Webhook Secret；拿到真实请求样本后再补签名校验。
 
-## 5. Obsidian
+## 冲突模型
 
-推荐使用 Obsidian Git：
-
-- Pull on startup；
-- 自动 commit + pull + push；
-- 桌面端作为首要使用场景。
-
-语雀修改会经 Webhook 触发 Action，把变更 commit 回 GitHub；Obsidian 下一次自动 pull 后即可拿到。
-
-## 冲突
-
-YSO 不使用“最后修改时间覆盖”。
+YSO 不按“最后修改时间”直接覆盖：
 
 ```text
 Base != Local
@@ -151,7 +166,7 @@ Base != Remote
 Local != Remote
 ```
 
-时会生成：
+会生成：
 
 ```text
 .yso/conflicts/<doc>/<fingerprint>/
@@ -161,19 +176,15 @@ Local != Remote
 └── meta.json
 ```
 
-原文件和语雀都不会被覆盖。
+两端原内容均不自动覆盖。
 
 ## 删除
 
-v0.1 不自动传播删除。删除只会进入：
+v0.2 仍采用软删除检测。删除事件进入 `.yso/state.json` 的 `pendingDeletes`，不会自动传播删除。
 
-```json
-{
-  "pendingDeletes": []
-}
-```
+## 开源项目调研
 
-后续版本再加入可确认的软删除/墓碑机制。
+本项目在实施前分析了 Obsidian/语雀/Markdown 同步相关项目，并据此决定不重复开发 Obsidian 插件。详细记录见 [`docs/oss-analysis.md`](docs/oss-analysis.md)。
 
 ## 开发
 
@@ -181,20 +192,22 @@ v0.1 不自动传播删除。删除只会进入：
 npm install
 npm run typecheck
 npm test
+npm run build
 npm run check
 ```
 
-> v0.1 源码已将直接依赖固定到明确版本。正式部署前建议在可正常访问 npmjs 的环境生成并提交 `package-lock.json`，之后将 CI 切换到 `npm ci`。
+GitHub Actions 会使用公共 npm registry 自动生成并提交 `package-lock.json`；锁文件生成后 CI 会逐步切换为 `npm ci`。
 
 ## Roadmap
 
-- [ ] 根据真实语雀 Webhook 请求样本增加官方签名校验；
+- [ ] 基于真实语雀 Webhook 样本增加官方签名校验；
 - [ ] Obsidian WikiLink ↔ 语雀链接 adapter；
-- [ ] 图片/附件 adapter（优先对象存储，非公开上传接口作为可选插件）；
-- [ ] 文本级三方自动合并：仅自动合并互不重叠的编辑；
+- [ ] 图片/附件 adapter（优先对象存储）；
+- [ ] 仅对互不重叠编辑执行文本级三方自动合并；
 - [ ] 可确认的删除传播；
 - [ ] TOC ↔ 文件夹目录映射；
-- [ ] GitHub Issue / PR 冲突工作流。
+- [ ] GitHub Issue / PR 冲突处理工作流；
+- [ ] 正式版本 tag，并让示例默认锁定 release tag。
 
 ## License
 
