@@ -1,0 +1,80 @@
+name: Release YSO v0.2.0
+
+on:
+  push:
+    paths:
+      - ".github/workflows/yso-release-v020.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: efa0e035052e6ff1ad52a86e117530346b057780
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify release target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse "$TARGET_SHA^{commit}")" = "$TARGET_SHA"
+          if git rev-parse -q --verify refs/tags/v0.2.0 >/dev/null; then
+            echo "v0.2.0 tag already exists" >&2
+            exit 1
+          fi
+          if gh release view v0.2.0 >/dev/null 2>&1; then
+            echo "v0.2.0 release already exists" >&2
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/release-notes.md <<'EOF'
+          首个经过真实语雀环境端到端验证的 YSO 版本。
+
+          主要能力：
+          - Yuque ↔ Git/Obsidian Push / Pull / Reconcile；
+          - Base / Local / Remote 三方冲突保护；
+          - 保守删除 tombstone；
+          - Doctor 与零写入 Plan；
+          - Plan orphan/pending-delete 风险明细；
+          - Composite Action 与 Reusable Workflow；
+          - Cloudflare Webhook Worker、request_id、结构化日志与有界重试。
+
+          实际验证覆盖全量/增量/幂等 Pull、创建/更新 Push、冲突与恢复、双向单边变更、重命名、双向删除保护，以及 Worker → repository_dispatch → YSO Pull。
+
+          详细变更与已知限制见 `CHANGELOG.md`。
+          EOF
+          gh release create v0.2.0 \
+            --repo "${{ github.repository }}" \
+            --target "$TARGET_SHA" \
+            --title "YSO v0.2.0" \
+            --notes-file /tmp/release-notes.md
+
+      - name: Verify release target SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG_SHA="$(git ls-remote origin refs/tags/v0.2.0 | cut -f1)"
+          test "$TAG_SHA" = "$TARGET_SHA"
+          gh release view v0.2.0 --json tagName,isDraft,isPrerelease --jq '.tagName == "v0.2.0" and (.isDraft | not) and (.isPrerelease | not)' | grep -Fx true
+
+      - name: Remove one-time release workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/yso-release-v020.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "维护：清理一次性发布工作流"
+          git push
