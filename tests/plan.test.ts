@@ -2,7 +2,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildMappingPlanSummary, buildOrphanStateSummary, buildPendingDeleteDetails } from '../src/plan.js';
+import { hashDocument } from '../src/core/hash.js';
+import { buildMappingPlanSummary, buildOrphanStateSummary, buildPendingDeleteDetails, inspectBaseIntegrity } from '../src/plan.js';
 import { StateStore } from '../src/state-store.js';
 import type { SyncState, YsoConfig } from '../src/types.js';
 
@@ -108,6 +109,52 @@ describe('read-only plan', () => {
       trackedDocuments: 1,
       pendingDeletes: 1,
       books: ['weepwood/removed'],
+    });
+  });
+
+  it('audits missing, mismatched and orphan base files without writing state', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'yso-plan-base-'));
+    tempDirs.push(dir);
+    const store = new StateStore(dir, '.yso');
+    await fs.mkdir(store.baseDir, { recursive: true });
+
+    const config: YsoConfig = {
+      version: 1,
+      vaultDir: '.',
+      stateDir: '.yso',
+      defaultMode: 'pull',
+      writeYuqueMetadata: true,
+      mappings: [{ localDir: 'Current', book: 'weepwood/current', mode: 'pull', filename: 'slug' }],
+    };
+    const state: SyncState = {
+      version: 1,
+      docs: {
+        'weepwood/current:1': {
+          book: 'weepwood/current', docId: 1, slug: 'one', title: 'One', path: 'Current/one.md', baseHash: hashDocument('One', 'body one\n'),
+        },
+        'weepwood/current:2': {
+          book: 'weepwood/current', docId: 2, slug: 'two', title: 'Two', path: 'Current/two.md', baseHash: hashDocument('Two', 'expected two\n'),
+        },
+        'weepwood/current:3': {
+          book: 'weepwood/current', docId: 3, slug: 'three', title: 'Three', path: 'Current/three.md', baseHash: hashDocument('Three', 'body three\n'),
+        },
+        'weepwood/removed:4': {
+          book: 'weepwood/removed', docId: 4, slug: 'four', title: 'Four', path: 'Old/four.md', baseHash: hashDocument('Four', 'old body\n'),
+        },
+      },
+      pendingDeletes: [],
+    };
+
+    await fs.writeFile(path.join(store.baseDir, store.baseFilename('weepwood/current:1')), 'body one\n');
+    await fs.writeFile(path.join(store.baseDir, store.baseFilename('weepwood/current:2')), 'different two\n');
+    await fs.writeFile(path.join(store.baseDir, store.baseFilename('weepwood/removed:4')), 'old body\n');
+    await fs.writeFile(path.join(store.baseDir, 'orphan.md'), 'orphan\n');
+
+    expect(await inspectBaseIntegrity(store, config, state)).toEqual({
+      trackedDocuments: 3,
+      missingBases: ['weepwood/current:3'],
+      hashMismatches: ['weepwood/current:2'],
+      orphanBaseFiles: ['orphan.md'],
     });
   });
 
