@@ -56,6 +56,9 @@ jobs:
       - name: Install Worker dependencies
         working-directory: worker
         run: npm ci --no-audit --no-fund
+      - name: Test Worker behavior
+        working-directory: worker
+        run: npm test
       - name: Build Worker without deploying
         working-directory: worker
         run: npx wrangler deploy --dry-run --outdir /tmp/yso-worker-dist
