@@ -1,5 +1,6 @@
 import { modeFor, resolveMapping } from './config.js';
 import { YuqueCli } from './adapters/yuque-cli.js';
+import { hashDocument } from './core/hash.js';
 import { VaultFs } from './filesystem.js';
 import { StateStore } from './state-store.js';
 import type { BookMapping, PendingDelete, RemoteDocMeta, SyncMode, SyncState, YsoConfig } from './types.js';
@@ -32,6 +33,13 @@ export interface PendingDeleteDetail {
   slug?: string;
   path?: string;
   detectedAt: string;
+}
+
+export interface BaseIntegritySummary {
+  trackedDocuments: number;
+  missingBases: string[];
+  hashMismatches: string[];
+  orphanBaseFiles: string[];
 }
 
 export async function runPlan(projectRoot: string, config: YsoConfig): Promise<MappingPlanSummary[]> {
@@ -87,6 +95,21 @@ export async function runPlan(projectRoot: string, config: YsoConfig): Promise<M
       `pending-deletes=${orphaned.pendingDeletes} books=${orphaned.books.join(',') || '-'}；` +
       '这些条目不会参与当前映射，请人工确认后清理',
     );
+  }
+
+  const baseIntegrity = await inspectBaseIntegrity(stateStore, config, state);
+  console.log(
+    `[plan:base] tracked=${baseIntegrity.trackedDocuments} missing=${baseIntegrity.missingBases.length} ` +
+    `hash-mismatch=${baseIntegrity.hashMismatches.length} orphan-files=${baseIntegrity.orphanBaseFiles.length}`,
+  );
+  for (const key of baseIntegrity.missingBases) {
+    console.warn(`[plan:base-risk] missing key=${key} path=${state.docs[key]?.path ?? '-'}`);
+  }
+  for (const key of baseIntegrity.hashMismatches) {
+    console.warn(`[plan:base-risk] hash-mismatch key=${key} path=${state.docs[key]?.path ?? '-'}`);
+  }
+  for (const filename of baseIntegrity.orphanBaseFiles) {
+    console.warn(`[plan:base-risk] orphan-file=${filename}`);
   }
 
   return summaries;
@@ -163,6 +186,39 @@ export function buildOrphanStateSummary(config: YsoConfig, state: SyncState): Or
     trackedDocuments: orphanDocs.length,
     pendingDeletes: orphanPending.length,
     books: [...books].sort(),
+  };
+}
+
+export async function inspectBaseIntegrity(
+  stateStore: StateStore,
+  config: YsoConfig,
+  state: SyncState,
+): Promise<BaseIntegritySummary> {
+  const activeBooks = new Set(config.mappings.map((mapping) => mapping.book));
+  const activeEntries = Object.entries(state.docs).filter(([, doc]) => activeBooks.has(doc.book));
+  const missingBases: string[] = [];
+  const hashMismatches: string[] = [];
+
+  for (const [key, doc] of activeEntries) {
+    const base = await stateStore.readBase(key);
+    if (base === null) {
+      missingBases.push(key);
+      continue;
+    }
+    if (hashDocument(doc.title, base) !== doc.baseHash) hashMismatches.push(key);
+  }
+
+  const expectedBaseFiles = new Set(
+    Object.keys(state.docs).map((key) => stateStore.baseFilename(key)),
+  );
+  const orphanBaseFiles = (await stateStore.listBaseFilenamesReadonly())
+    .filter((filename) => filename.endsWith('.md') && !expectedBaseFiles.has(filename));
+
+  return {
+    trackedDocuments: activeEntries.length,
+    missingBases: missingBases.sort(),
+    hashMismatches: hashMismatches.sort(),
+    orphanBaseFiles,
   };
 }
 
