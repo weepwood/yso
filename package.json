@@ -12,9 +12,10 @@
     "push": "tsx src/cli.ts push",
     "pull": "tsx src/cli.ts pull",
     "reconcile": "tsx src/cli.ts reconcile",
+    "version:check": "node scripts/check-version.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run tests",
-    "check": "npm run typecheck && npm test",
+    "check": "npm run version:check && npm run typecheck && npm test",
     "doctor": "tsx src/cli.ts doctor",
     "build": "tsc --project tsconfig.build.json"
   },
