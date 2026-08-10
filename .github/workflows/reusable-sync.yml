@@ -32,9 +32,14 @@ on:
         required: false
         default: "同步：更新 YSO 同步结果"
         type: string
+      smoke-only:
+        description: Internal CI mode that validates reusable workflow startup without running YSO.
+        required: false
+        default: false
+        type: boolean
     secrets:
       YUQUE_TOKEN:
-        required: true
+        required: false
       YUQUE_HOST:
         required: false
 
@@ -65,6 +70,7 @@ jobs:
           persist-credentials: false
 
       - name: Run YSO
+        if: ${{ !inputs.smoke-only }}
         uses: ./.yso-engine
         with:
           command: ${{ inputs.command }}
@@ -73,13 +79,13 @@ jobs:
           yuque-token: ${{ secrets.YUQUE_TOKEN }}
           yuque-host: ${{ secrets.YUQUE_HOST }}
 
-      - name: Remove engine checkout
-        if: always()
-        shell: bash
-        run: rm -rf .yso-engine
+      # Do not remove .yso-engine in a normal step. Composite actions can have
+      # post steps (for example actions/setup-node), and GitHub executes those
+      # after all normal steps. Removing the local action directory earlier
+      # breaks its post-action cleanup. Hosted runners are ephemeral anyway.
 
       - name: Commit synchronization result
-        if: ${{ inputs.commit-changes && success() }}
+        if: ${{ !inputs.smoke-only && inputs.commit-changes && success() }}
         shell: bash
         env:
           YSO_COMMIT_MESSAGE: ${{ inputs.commit-message }}
@@ -88,6 +94,7 @@ jobs:
           git config user.name "yso-sync[bot]"
           git config user.email "yso-sync@users.noreply.github.com"
           git add --all
+          git reset -- .yso-engine
           if git diff --cached --quiet; then
             echo "No synchronization changes to commit."
             exit 0

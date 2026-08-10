@@ -6,30 +6,20 @@ on:
       - ".github/workflows/reusable-sync.yml"
       - ".github/workflows/reusable-smoke.yml"
       - "action.yml"
-      - "src/**"
-      - "package.json"
-      - "package-lock.json"
-      - "tests/fixtures/reusable-smoke/**"
   pull_request:
     paths:
       - ".github/workflows/reusable-sync.yml"
       - ".github/workflows/reusable-smoke.yml"
       - "action.yml"
-      - "src/**"
-      - "package.json"
-      - "package-lock.json"
-      - "tests/fixtures/reusable-smoke/**"
 
 permissions:
   contents: read
 
 jobs:
-  doctor-readonly:
+  readonly-startup:
     uses: ./.github/workflows/reusable-sync.yml
     with:
       command: doctor
-      config-path: tests/fixtures/reusable-smoke/yso.config.json
       engine-ref: ${{ github.sha }}
       commit-changes: false
-    secrets:
-      YUQUE_TOKEN: ${{ github.token }}
+      smoke-only: true
