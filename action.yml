@@ -1,0 +1,64 @@
+name: YSO Sync
+description: Run Yuque ↔ Git/Obsidian synchronization inside the caller repository.
+author: weepwood
+
+inputs:
+  command:
+    description: "Sync command: push, pull, reconcile, or doctor."
+    required: true
+  config-path:
+    description: Path to yso.config.json, relative to working-directory.
+    required: false
+    default: yso.config.json
+  working-directory:
+    description: Caller repository directory that contains the Vault/config.
+    required: false
+    default: .
+  yuque-token:
+    description: Yuque Open API token.
+    required: true
+  yuque-host:
+    description: Optional Yuque space/private host.
+    required: false
+    default: ''
+  node-version:
+    description: Node.js version used by YSO.
+    required: false
+    default: '24'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version: ${{ inputs.node-version }}
+        package-manager-cache: false
+
+    - name: Install YSO runtime
+      shell: bash
+      run: npm install --prefix "$GITHUB_ACTION_PATH" --omit=dev --no-audit --no-fund --no-package-lock
+
+    - name: Run YSO
+      shell: bash
+      env:
+        YSO_COMMAND: ${{ inputs.command }}
+        YSO_CONFIG_PATH: ${{ inputs.config-path }}
+        YSO_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        YUQUE_TOKEN: ${{ inputs.yuque-token }}
+        YUQUE_HOST: ${{ inputs.yuque-host }}
+      run: |
+        set -euo pipefail
+        case "$YSO_COMMAND" in
+          push|pull|reconcile|doctor) ;;
+          *) echo "Unsupported YSO command: $YSO_COMMAND" >&2; exit 2 ;;
+        esac
+        if [ -z "$YUQUE_HOST" ]; then
+          unset YUQUE_HOST
+        fi
+        cd -- "$YSO_WORKING_DIRECTORY"
+        export PATH="$GITHUB_ACTION_PATH/node_modules/.bin:$PATH"
+        "$GITHUB_ACTION_PATH/node_modules/.bin/tsx" \
+          "$GITHUB_ACTION_PATH/src/cli.ts" \
+          --config "$YSO_CONFIG_PATH" \
+          "$YSO_COMMAND"

@@ -8,6 +8,9 @@ on:
       - "package.json"
       - "package-lock.json"
       - "tsconfig.json"
+      - "tsconfig.build.json"
+      - "action.yml"
+      - ".github/workflows/reusable-sync.yml"
       - ".github/workflows/ci.yml"
   pull_request:
 
@@ -22,3 +25,18 @@ jobs:
           package-manager-cache: false
       - run: npm install --no-audit --no-fund --no-package-lock
       - run: npm run check
+      - run: npm run build
+
+  action-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Prepare smoke-test Vault
+        run: |
+          mkdir -p vault
+          cp yso.config.example.json yso.config.json
+      - name: Run local composite action
+        uses: ./
+        with:
+          command: doctor
+          yuque-token: smoke-test-token

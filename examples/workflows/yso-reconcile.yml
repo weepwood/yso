@@ -1,0 +1,20 @@
+name: YSO Reconcile
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    uses: weepwood/yso/.github/workflows/reusable-sync.yml@main
+    with:
+      command: reconcile
+      engine-ref: main
+      commit-message: "同步：执行全量一致性校验"
+    secrets:
+      YUQUE_TOKEN: ${{ secrets.YUQUE_TOKEN }}
+      YUQUE_HOST: ${{ secrets.YUQUE_HOST }}

@@ -10,6 +10,10 @@ export default {
     if (request.method === 'GET') return new Response('yso webhook gateway: ok');
     if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
 
+    if (!env.GITHUB_OWNER || !env.GITHUB_REPO || env.GITHUB_OWNER === 'CHANGE_ME' || env.GITHUB_REPO === 'CHANGE_ME') {
+      return new Response('Worker target repository is not configured', { status: 500 });
+    }
+
     const url = new URL(request.url);
     const token = url.searchParams.get('token') ?? request.headers.get('x-yso-webhook-secret');
     if (!env.WEBHOOK_SECRET || token !== env.WEBHOOK_SECRET) return new Response('Unauthorized', { status: 401 });

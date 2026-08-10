@@ -11,6 +11,8 @@ export async function loadConfig(configPath: string): Promise<YsoConfig> {
 
   if (config.version !== 1) throw new Error('yso.config.json: version 必须为 1');
   if (!config.vaultDir || typeof config.vaultDir !== 'string') throw new Error('yso.config.json: 缺少 vaultDir');
+  validateRelativeDir('vaultDir', config.vaultDir);
+  if (config.stateDir !== undefined) validateRelativeDir('stateDir', config.stateDir);
   if (!Array.isArray(config.mappings) || config.mappings.length === 0) throw new Error('yso.config.json: mappings 至少需要一项');
 
   for (const mapping of config.mappings) validateMapping(mapping);
@@ -33,6 +35,13 @@ export async function loadConfig(configPath: string): Promise<YsoConfig> {
     writeYuqueMetadata: config.writeYuqueMetadata ?? true,
     mappings: config.mappings,
   };
+}
+
+function validateRelativeDir(field: string, value: string): void {
+  const normalized = value.replace(/\\/g, '/');
+  if (!normalized || normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized) || normalized.split('/').includes('..')) {
+    throw new Error(`${field} 必须是项目内的相对路径: ${value}`);
+  }
 }
 
 function validateMapping(mapping: BookMapping): void {

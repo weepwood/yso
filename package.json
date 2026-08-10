@@ -1,6 +1,6 @@
 {
   "name": "yso",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Yuque ↔ Git/Obsidian bidirectional sync engine",
   "type": "module",
@@ -14,16 +14,18 @@
     "reconcile": "tsx src/cli.ts reconcile",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "npm run typecheck && npm test"
+    "check": "npm run typecheck && npm test",
+    "doctor": "tsx src/cli.ts doctor",
+    "build": "tsc --project tsconfig.build.json"
   },
   "dependencies": {
     "commander": "14.0.0",
     "gray-matter": "4.0.3",
-    "yuque-open-cli": "1.1.0"
+    "yuque-open-cli": "1.1.0",
+    "tsx": "4.19.2"
   },
   "devDependencies": {
     "@types/node": "22.10.5",
-    "tsx": "4.19.2",
     "typescript": "5.7.2",
     "vitest": "4.1.10"
   }

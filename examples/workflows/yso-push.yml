@@ -1,0 +1,20 @@
+name: Obsidian → Yuque
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    uses: weepwood/yso/.github/workflows/reusable-sync.yml@main
+    with:
+      command: push
+      engine-ref: main
+    secrets:
+      YUQUE_TOKEN: ${{ secrets.YUQUE_TOKEN }}
+      YUQUE_HOST: ${{ secrets.YUQUE_HOST }}

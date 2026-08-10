@@ -1,0 +1,35 @@
+name: Refresh lockfiles
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - package.json
+      - worker/package.json
+      - .github/workflows/lockfile.yml
+
+permissions:
+  contents: write
+
+jobs:
+  lockfiles:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Generate root lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Generate worker lockfile
+        working-directory: worker
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Commit lockfiles
+        run: |
+          git config user.name "yso-lockfile[bot]"
+          git config user.email "yso-lockfile@users.noreply.github.com"
+          git add package-lock.json worker/package-lock.json
+          git diff --cached --quiet || git commit -m "构建：更新 npm 锁文件"
+          git push

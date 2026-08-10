@@ -1,0 +1,94 @@
+name: Reusable YSO Sync
+
+on:
+  workflow_call:
+    inputs:
+      command:
+        description: push, pull, reconcile, or doctor
+        required: true
+        type: string
+      config-path:
+        description: Path to yso.config.json in the caller repository
+        required: false
+        default: yso.config.json
+        type: string
+      working-directory:
+        description: Working directory in the caller repository
+        required: false
+        default: .
+        type: string
+      engine-ref:
+        description: YSO branch/tag/SHA to execute
+        required: false
+        default: main
+        type: string
+      commit-changes:
+        description: Commit and push files changed by YSO
+        required: false
+        default: true
+        type: boolean
+      commit-message:
+        description: Commit message used when YSO changes files
+        required: false
+        default: "同步：更新 YSO 同步结果"
+        type: string
+    secrets:
+      YUQUE_TOKEN:
+        required: true
+      YUQUE_HOST:
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: yso-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Checkout YSO engine
+        uses: actions/checkout@v7
+        with:
+          repository: weepwood/yso
+          ref: ${{ inputs.engine-ref }}
+          path: .yso-engine
+          persist-credentials: false
+
+      - name: Run YSO
+        uses: ./.yso-engine
+        with:
+          command: ${{ inputs.command }}
+          config-path: ${{ inputs.config-path }}
+          working-directory: ${{ inputs.working-directory }}
+          yuque-token: ${{ secrets.YUQUE_TOKEN }}
+          yuque-host: ${{ secrets.YUQUE_HOST }}
+
+      - name: Remove engine checkout
+        if: always()
+        shell: bash
+        run: rm -rf .yso-engine
+
+      - name: Commit synchronization result
+        if: ${{ inputs.commit-changes && success() }}
+        shell: bash
+        env:
+          YSO_COMMIT_MESSAGE: ${{ inputs.commit-message }}
+        run: |
+          set -euo pipefail
+          git config user.name "yso-sync[bot]"
+          git config user.email "yso-sync@users.noreply.github.com"
+          git add --all
+          if git diff --cached --quiet; then
+            echo "No synchronization changes to commit."
+            exit 0
+          fi
+          git commit -m "$YSO_COMMIT_MESSAGE"
+          git push

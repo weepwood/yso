@@ -1,0 +1,20 @@
+name: Yuque → Obsidian
+
+on:
+  repository_dispatch:
+    types: [yuque_webhook]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    uses: weepwood/yso/.github/workflows/reusable-sync.yml@main
+    with:
+      command: pull
+      engine-ref: main
+      commit-message: "同步：从语雀更新 Obsidian"
+    secrets:
+      YUQUE_TOKEN: ${{ secrets.YUQUE_TOKEN }}
+      YUQUE_HOST: ${{ secrets.YUQUE_HOST }}
