@@ -38,6 +38,8 @@ jobs:
           cp yso.config.example.json yso.config.json
       - name: Run local composite action
         uses: ./
+        env:
+          YSO_DOCTOR_SKIP_REMOTE: "1"
         with:
           command: doctor
           yuque-token: smoke-test-token
