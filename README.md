@@ -11,7 +11,7 @@ v0.1 MVP 已包含：
 - `push`：本地 Markdown → 语雀；
 - `pull`：语雀增量变更 → 本地 Markdown；
 - `reconcile`：全量拉取 + 本地扫描；
-- 语雀官方 `yuque-open-cli@1.2.0`；
+- 语雀官方 `yuque-open-cli@1.1.0`；
 - `.yso/state.json` 文档 ID/路径映射；
 - `.yso/base/` 共同基线；
 - `.yso/conflicts/` 三方冲突留档；

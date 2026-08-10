@@ -81,9 +81,9 @@ Obsidian Git 已提供成熟的自动 commit/pull/push；Gitless Sync 则证明�
 
 ## 7. 语雀官方 yuque-open-cli
 
-2026 年官方 CLI 已覆盖文档 list/get/create/update/delete/version，并支持 `--changed-at-gte`。
+官方 CLI v1.1.0 已覆盖文档 list/get/create/update/delete/version，并支持 `--changed-at-gte` 与 `--deleted`。
 
-**YSO 直接依赖并固定 `yuque-open-cli@1.2.0`**，避免自己长期维护一套 Open API HTTP 客户端。
+**YSO 直接依赖并固定已正式发布的 `yuque-open-cli@1.1.0`**，避免自己长期维护一套 Open API HTTP 客户端，也避免依赖官方仓库尚未正式发布的主分支版本。
 
 ## 最终架构
 
